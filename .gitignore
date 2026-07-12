@@ -1,1 +1,5 @@
 sarjrandevu-handoff.md
+CLAUDE.md
+.env
+node_modules/
+backend/bin/
