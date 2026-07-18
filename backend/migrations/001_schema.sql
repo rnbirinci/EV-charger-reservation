@@ -1,10 +1,10 @@
 CREATE TABLE devices(
     id SERIAL PRIMARY KEY,
-    name TEXT NOT NULL, 
+    name TEXT NOT NULL,
     address TEXT NOT NULL,
-    power INT,
+    power INT NOT NULL,
     location TEXT NOT NULL,
-    price NUMERIC(3,2)
+    price NUMERIC(7,3) NOT NULL
 );
 
 CREATE TABLE users(
@@ -13,7 +13,7 @@ CREATE TABLE users(
     surname TEXT NOT NULL,
     role TEXT NOT NULL CHECK(role IN ('admin', 'resident')),
     license_plate TEXT NOT NULL UNIQUE,
-    pin_hash TEXT NOT NULL  
+    pin_hash TEXT NOT NULL
 );
 
 CREATE TABLE reservations(
