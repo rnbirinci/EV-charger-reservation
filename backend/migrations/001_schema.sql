@@ -1,6 +1,6 @@
 CREATE TABLE devices(
     id SERIAL PRIMARY KEY,
-    name TEXT NOT NULL,
+    name TEXT NOT NULL UNIQUE,
     address TEXT NOT NULL,
     power INT NOT NULL,
     location TEXT NOT NULL,
