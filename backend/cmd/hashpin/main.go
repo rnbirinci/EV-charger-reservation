@@ -2,8 +2,9 @@ package main
 
 import (
 	"fmt"
-	"golang.org/x/crypto/bcrypt"
 	"log"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 func main() {
@@ -12,7 +13,7 @@ func main() {
 	for _, pin := range pins {
 		hash, err := bcrypt.GenerateFromPassword([]byte(pin), bcrypt.DefaultCost)
 		if err != nil {
-			log.Fatal("Error", err)
+			log.Fatalf("Hashing %q failed: %v", pin, err)
 		}
 		fmt.Println(pin, string(hash))
 	}
