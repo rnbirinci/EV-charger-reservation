@@ -25,7 +25,7 @@ func requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tokenString, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if !ok || tokenString == "" {
-			http.Error(w, "missing bearer token", http.StatusUnauthorized)
+			writeError(w, http.StatusUnauthorized, "missing bearer token")
 			return
 		}
 
@@ -34,19 +34,19 @@ func requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			return []byte(secret), nil
 		})
 		if err != nil || !token.Valid {
-			http.Error(w, "invalid or expired token", http.StatusUnauthorized)
+			writeError(w, http.StatusUnauthorized, "invalid or expired token")
 			return
 		}
 
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok {
-			http.Error(w, "invalid token claims", http.StatusUnauthorized)
+			writeError(w, http.StatusUnauthorized, "invalid token claims")
 			return
 		}
 		sub, _ := claims["sub"].(string)
 		userID, err := strconv.Atoi(sub)
 		if err != nil {
-			http.Error(w, "invalid token claims", http.StatusUnauthorized)
+			writeError(w, http.StatusUnauthorized, "invalid token claims")
 			return
 		}
 		role, _ := claims["role"].(string)
@@ -55,6 +55,18 @@ func requireAuth(next http.HandlerFunc) http.HandlerFunc {
 		ctx = context.WithValue(ctx, roleContextKey, role)
 		next(w, r.WithContext(ctx))
 	}
+}
+
+// requireAdmin is requireAuth plus a role check: the caller must be logged
+// in AND have role "admin".
+func requireAdmin(next http.HandlerFunc) http.HandlerFunc {
+	return requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		if roleFromContext(r) != "admin" {
+			writeError(w, http.StatusForbidden, "admin access required")
+			return
+		}
+		next(w, r)
+	})
 }
 
 func userIDFromContext(r *http.Request) int {

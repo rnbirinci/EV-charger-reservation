@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -26,10 +25,14 @@ func NewRouter(pool *pgxpool.Pool) *http.ServeMux {
 	mux.HandleFunc("GET /api/device", s.getDevice)
 	mux.HandleFunc("GET /api/slots", s.getSlots)
 	mux.HandleFunc("POST /api/login", s.login)
+	mux.HandleFunc("POST /api/refresh", s.refresh)
+	mux.HandleFunc("POST /api/logout", s.logout)
 
 	mux.HandleFunc("POST /api/reservations", requireAuth(s.createReservation))
 	mux.HandleFunc("GET /api/reservations/mine", requireAuth(s.getMyReservations))
 	mux.HandleFunc("DELETE /api/reservations/{id}", requireAuth(s.cancelReservation))
+
+	mux.HandleFunc("GET /api/admin/reservations", requireAdmin(s.getAllReservations))
 
 	return mux
 }
@@ -41,25 +44,23 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getDevice(w http.ResponseWriter, r *http.Request) {
 	device, err := store.GetDevice(s.pool)
 	if err != nil {
-		http.Error(w, "http error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "http error")
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(device)
+	writeJSON(w, http.StatusOK, device)
 }
 
 func (s *Server) getSlots(w http.ResponseWriter, r *http.Request) {
 	dateStr := r.URL.Query().Get("date")
 	date, err := time.Parse("2006-01-02", dateStr)
 	if err != nil {
-		http.Error(w, "invalid date, expected format YYYY-MM-DD", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid date, expected format YYYY-MM-DD")
 		return
 	}
 
 	busy, err := store.GetBusySlots(s.pool, date)
 	if err != nil {
-		http.Error(w, "http error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "http error")
 		return
 	}
 
@@ -76,6 +77,5 @@ func (s *Server) getSlots(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(slots)
+	writeJSON(w, http.StatusOK, slots)
 }

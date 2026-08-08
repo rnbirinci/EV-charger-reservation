@@ -1,5 +1,3 @@
-// Plaka ve PIN alır, doğrular, rastgele refresh token üretir, refresh'in hash'ini kaydeder ve ikisini JSON'da döner.
-
 package handlers
 
 import (
@@ -8,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"strconv"
@@ -23,68 +22,139 @@ const (
 	refreshTokenTTL = 7 * 24 * time.Hour // uzun ömürlü
 )
 
-type loginRequest struct { // gelen JSON
+type loginRequest struct {
 	LicensePlate string `json:"license_plate"`
 	Pin          string `json:"pin"`
 }
 
-type loginResponse struct { // giden JSON
+type refreshRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+type tokenResponse struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
 }
 
-func (s *Server) login(w http.ResponseWriter, r *http.Request) { // Gelen isteğin gövdesini loginRequest'e doldurur
+func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
 	user, err := store.GetUserByLicensePlate(s.pool, req.LicensePlate)
 	if err != nil {
-		http.Error(w, "invalid license plate or pin", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "invalid license plate or pin")
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PinHash), []byte(req.Pin)); err != nil {
-		http.Error(w, "invalid license plate or pin", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "invalid license plate or pin")
 		return
 	}
 
+	access, refresh, err := s.issueTokens(user.ID, user.Role)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not create session")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, tokenResponse{AccessToken: access, RefreshToken: refresh})
+}
+
+func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
+	var req refreshRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	rt, err := store.GetRefreshTokenByHash(s.pool, hashToken(req.RefreshToken))
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid refresh token")
+		return
+	}
+
+	if rt.RevokedAt != nil {
+		// This token was already used (login/refresh always revokes the old
+		// token as it hands out a new one) or explicitly logged out.
+		// Seeing it again means it leaked — kill every session this user
+		// has, not just this one.
+		_ = store.RevokeAllUserRefreshTokens(s.pool, rt.UserID)
+		writeError(w, http.StatusUnauthorized, "refresh token already used; all sessions revoked")
+		return
+	}
+	if time.Now().After(rt.ExpiresAt) {
+		writeError(w, http.StatusUnauthorized, "refresh token expired")
+		return
+	}
+
+	user, err := store.GetUserByID(s.pool, rt.UserID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "http error")
+		return
+	}
+
+	if err := store.RevokeRefreshToken(s.pool, rt.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "could not rotate session")
+		return
+	}
+
+	access, newRefresh, err := s.issueTokens(user.ID, user.Role)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not create session")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, tokenResponse{AccessToken: access, RefreshToken: newRefresh})
+}
+
+func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
+	var req refreshRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	// If the token doesn't exist, there's nothing to revoke — either way,
+	// the end state the caller wanted (this token can't be used again) is
+	// already true, so this always reports success.
+	if rt, err := store.GetRefreshTokenByHash(s.pool, hashToken(req.RefreshToken)); err == nil {
+		_ = store.RevokeRefreshToken(s.pool, rt.ID)
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// issueTokens signs a new access token and generates a new refresh token
+// (storing only its hash), for use right after login or a successful
+// refresh.
+func (s *Server) issueTokens(userID int, role string) (access, refresh string, err error) {
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
-		http.Error(w, "server misconfigured", http.StatusInternalServerError)
-		return
+		return "", "", errors.New("JWT_SECRET is not set")
 	}
 
-	claims := jwt.MapClaims{ // JWT üret
-		"sub":  strconv.Itoa(user.ID),
-		"role": user.Role,
+	claims := jwt.MapClaims{
+		"sub":  strconv.Itoa(userID),
+		"role": role,
 		"exp":  time.Now().Add(accessTokenTTL).Unix(),
 	}
-	accessToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
+	access, err = jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
 	if err != nil {
-		http.Error(w, "could not create access token", http.StatusInternalServerError)
-		return
+		return "", "", err
 	}
 
-	refreshToken, refreshHash, err := newRefreshToken() //refresh token üret
+	refresh, refreshHash, err := newRefreshToken()
 	if err != nil {
-		http.Error(w, "could not create refresh token", http.StatusInternalServerError)
-		return
+		return "", "", err
+	}
+	if err := store.SaveRefreshToken(s.pool, userID, refreshHash, time.Now().Add(refreshTokenTTL)); err != nil {
+		return "", "", err
 	}
 
-	err = store.SaveRefreshToken(s.pool, user.ID, refreshHash, time.Now().Add(refreshTokenTTL)) // refresh token'ın hash'ini kaydet
-	if err != nil {
-		http.Error(w, "could not save session", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json") // JSON olarak döndür
-	json.NewEncoder(w).Encode(loginResponse{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-	})
+	return access, refresh, nil
 }
 
 // newRefreshToken returns a random opaque token to send to the client, and
@@ -98,9 +168,10 @@ func newRefreshToken() (token string, hash string, err error) {
 		return "", "", err
 	}
 	token = base64.RawURLEncoding.EncodeToString(buf)
+	return token, hashToken(token), nil
+}
 
+func hashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
-	hash = hex.EncodeToString(sum[:])
-
-	return token, hash, nil
+	return hex.EncodeToString(sum[:])
 }

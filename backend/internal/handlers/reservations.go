@@ -21,13 +21,13 @@ type createReservationRequest struct {
 func (s *Server) createReservation(w http.ResponseWriter, r *http.Request) {
 	var req createReservationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
 	start, err := time.Parse(time.RFC3339, req.Start)
 	if err != nil {
-		http.Error(w, "invalid start, expected RFC3339 e.g. 2026-08-10T14:00:00Z", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid start, expected RFC3339 e.g. 2026-08-10T14:00:00Z")
 		return
 	}
 
@@ -37,9 +37,7 @@ func (s *Server) createReservation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]int{"id": id})
+	writeJSON(w, http.StatusCreated, map[string]int{"id": id})
 }
 
 // writeReservationError maps a service-layer error to the right HTTP status:
@@ -48,40 +46,38 @@ func (s *Server) createReservation(w http.ResponseWriter, r *http.Request) {
 func writeReservationError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, service.ErrInvalidSlotCount), errors.Is(err, service.ErrPastReservation):
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrTooManyActive), errors.Is(err, service.ErrSlotTaken):
-		http.Error(w, err.Error(), http.StatusConflict)
+		writeError(w, http.StatusConflict, err.Error())
 	default:
-		http.Error(w, "http error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "http error")
 	}
 }
 
 func (s *Server) getMyReservations(w http.ResponseWriter, r *http.Request) {
 	reservations, err := store.GetReservationsByUser(s.pool, userIDFromContext(r))
 	if err != nil {
-		http.Error(w, "http error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "http error")
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(reservations)
+	writeJSON(w, http.StatusOK, reservations)
 }
 
 func (s *Server) cancelReservation(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
-		http.Error(w, "invalid reservation id", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid reservation id")
 		return
 	}
 
 	isAdmin := roleFromContext(r) == "admin"
 	deleted, err := store.DeleteReservation(s.pool, id, userIDFromContext(r), isAdmin)
 	if err != nil {
-		http.Error(w, "http error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "http error")
 		return
 	}
 	if !deleted {
-		http.Error(w, "reservation not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "reservation not found")
 		return
 	}
 
