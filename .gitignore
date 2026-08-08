@@ -3,3 +3,4 @@ CLAUDE.md
 .env
 node_modules/
 backend/bin/
+backend/server
