@@ -105,6 +105,46 @@ func GetReservationsByUser(pool *pgxpool.Pool, userID int) ([]model.Reservation,
 	return result, nil
 }
 
+// GetAllReservations returns every reservation in the system with its
+// owner's identity attached, for the admin view.
+func GetAllReservations(pool *pgxpool.Pool) ([]model.AdminReservation, error) {
+	rows, err := pool.Query(context.Background(), `
+		SELECT r.id, r.user_id, u.name || ' ' || u.surname, u.license_plate, r.created_at, sr.start_time
+		FROM reservations r
+		JOIN users u ON u.id = r.user_id
+		JOIN slot_reservations sr ON sr.reservation_id = r.id
+		ORDER BY r.id, sr.start_time`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []model.AdminReservation
+	for rows.Next() {
+		var id, userID int
+		var userName, plate string
+		var createdAt, slotTime time.Time
+		if err := rows.Scan(&id, &userID, &userName, &plate, &createdAt, &slotTime); err != nil {
+			return nil, err
+		}
+		if len(result) == 0 || result[len(result)-1].ID != id {
+			result = append(result, model.AdminReservation{
+				ID:           id,
+				UserID:       userID,
+				UserName:     userName,
+				LicensePlate: plate,
+				CreatedAt:    createdAt,
+			})
+		}
+		last := &result[len(result)-1]
+		last.Slots = append(last.Slots, slotTime)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // DeleteReservation removes a reservation (and, via ON DELETE CASCADE, its
 // slots). Residents may only delete their own; admins may delete any. It
 // reports whether a row was actually deleted, so the handler can tell "not
