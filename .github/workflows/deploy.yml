@@ -1,0 +1,38 @@
+name: Deploy Suhube
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: suhube-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    # Self-hosted runner prod makinesinde; checkout'u yerinde günceller.
+    runs-on: [self-hosted, linux]
+    permissions:
+      contents: read
+    steps:
+      - name: Deploy in place
+        run: |
+          set -euo pipefail
+          cd /opt/suhube
+          git fetch origin main
+          git reset --hard origin/main
+          docker compose -f docker-compose.yml -f compose.prod.yml up -d --build
+
+      - name: Health check
+        run: |
+          for i in $(seq 1 6); do
+            if curl -sf https://suhube.ahmetbirinci.dev > /dev/null; then
+              echo "Suhube is live!"
+              exit 0
+            fi
+            echo "Attempt $i/6 failed, retrying in 5s..."
+            sleep 5
+          done
+          echo "Health check failed"
+          exit 1
