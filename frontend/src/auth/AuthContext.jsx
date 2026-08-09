@@ -14,6 +14,13 @@ export function AuthProvider({ children }) {
     return claims
   }, [])
 
+  // First-login: set a PIN for an invited/reset account, which also logs in.
+  const setPin = useCallback(async (licensePlate, pin) => {
+    const claims = await api.setPin(licensePlate, pin)
+    setUser(claims)
+    return claims
+  }, [])
+
   const logout = useCallback(async () => {
     await api.logout()
     setUser(null)
@@ -21,8 +28,12 @@ export function AuthProvider({ children }) {
 
   const value = {
     user,
-    isAdmin: user?.role === 'admin',
+    // A superadmin is also an admin (sees the admin panel); isSuper unlocks
+    // the extra role-management actions.
+    isAdmin: user?.role === 'admin' || user?.role === 'superadmin',
+    isSuper: user?.role === 'superadmin',
     login,
+    setPin,
     logout,
   }
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

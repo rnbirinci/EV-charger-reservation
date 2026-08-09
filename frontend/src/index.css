@@ -2,8 +2,6 @@
    the Suhube charger app. Dark-first, iOS-26 "Liquid Glass", electric-teal
    accent used only on live/selected values. */
 
-@import url("https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap");
-
 :root {
   /* Brand */
   --ioniq-teal: #00d4d4;
@@ -34,9 +32,11 @@
   --sel-fill: rgba(0, 212, 212, 0.16);
 
   /* Fonts. On Apple devices -apple-system / ui-rounded resolve to the real
-     SF Pro / SF Pro Rounded; the Google fallbacks cover everywhere else. */
-  --font-rounded: ui-rounded, "SF Pro Rounded", -apple-system, "Hanken Grotesk", system-ui, sans-serif;
-  --font-text: -apple-system, "SF Pro Text", "Hanken Grotesk", system-ui, sans-serif;
+     SF Pro / SF Pro Rounded; elsewhere they degrade to the system UI font.
+     (No external webfont is loaded — see the security review; self-hosted
+     SF Pro is a later polish step.) */
+  --font-rounded: ui-rounded, "SF Pro Rounded", -apple-system, system-ui, sans-serif;
+  --font-text: -apple-system, "SF Pro Text", system-ui, sans-serif;
 
   /* Radii */
   --radius-button: 12px;

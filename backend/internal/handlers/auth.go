@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -43,16 +44,35 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Throttle brute-forcing of the 4-digit PIN: too many failed attempts for
+	// a plate locks that plate out for a while.
+	key := strings.ToUpper(strings.TrimSpace(req.LicensePlate))
+	if !s.limiter.allowed(key) {
+		writeError(w, http.StatusTooManyRequests, "too many attempts; try again later")
+		return
+	}
+
 	user, err := store.GetUserByLicensePlate(s.pool, req.LicensePlate)
 	if err != nil {
+		s.limiter.recordFailure(key)
 		writeError(w, http.StatusUnauthorized, "invalid license plate or pin")
 		return
 	}
 
+	// Invited/reset account with no PIN yet — the client should send them to
+	// the set-PIN flow instead of asking for a PIN.
+	if !user.PinSet {
+		writeError(w, http.StatusConflict, "no pin set for this account")
+		return
+	}
+
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PinHash), []byte(req.Pin)); err != nil {
+		s.limiter.recordFailure(key)
 		writeError(w, http.StatusUnauthorized, "invalid license plate or pin")
 		return
 	}
+
+	s.limiter.reset(key)
 
 	access, refresh, err := s.issueTokens(user.ID, user.Role)
 	if err != nil {
@@ -174,4 +194,79 @@ func newRefreshToken() (token string, hash string, err error) {
 func hashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
+}
+
+// authStatus lets the login screen decide whether to ask for a PIN (active
+// account) or to offer the set-PIN flow (invited/reset account).
+func (s *Server) authStatus(w http.ResponseWriter, r *http.Request) {
+	plate := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("license_plate")))
+	if plate == "" {
+		writeError(w, http.StatusBadRequest, "license_plate is required")
+		return
+	}
+	status := "unknown"
+	if user, err := store.GetUserByLicensePlate(s.pool, plate); err == nil {
+		if user.PinSet {
+			status = "active"
+		} else {
+			status = "needs_pin"
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": status})
+}
+
+// setPin sets the PIN for an invited/reset account and logs the user in. The
+// store's `pin_hash IS NULL` guard ensures an already-active account can't be
+// taken over here.
+func (s *Server) setPin(w http.ResponseWriter, r *http.Request) {
+	var req loginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if !isValidPin(req.Pin) {
+		writeError(w, http.StatusBadRequest, "pin must be exactly 4 digits")
+		return
+	}
+	plate := strings.ToUpper(strings.TrimSpace(req.LicensePlate))
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Pin), bcrypt.DefaultCost)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not set pin")
+		return
+	}
+	ok, err := store.SetPin(s.pool, plate, string(hash))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not set pin")
+		return
+	}
+	if !ok {
+		// Either no such plate, or the account already has a PIN.
+		writeError(w, http.StatusConflict, "this account already has a pin, or does not exist")
+		return
+	}
+
+	user, err := store.GetUserByLicensePlate(s.pool, plate)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "http error")
+		return
+	}
+	access, refresh, err := s.issueTokens(user.ID, user.Role)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not create session")
+		return
+	}
+	writeJSON(w, http.StatusOK, tokenResponse{AccessToken: access, RefreshToken: refresh})
+}
+
+func isValidPin(pin string) bool {
+	if len(pin) != 4 {
+		return false
+	}
+	for _, c := range pin {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }

@@ -137,4 +137,40 @@ export const api = {
   getAllReservations() {
     return request('/admin/reservations', { auth: true })
   },
+
+  // Tells the login screen whether a plate is an active account (ask for PIN),
+  // an invited/reset one (offer set-PIN), or unknown.
+  authStatus(licensePlate) {
+    return request(`/auth/status?license_plate=${encodeURIComponent(licensePlate)}`)
+  },
+
+  // Sets the PIN for an invited/reset account and logs in; returns claims.
+  async setPin(licensePlate, pin) {
+    const data = await request('/set-pin', {
+      method: 'POST',
+      body: { license_plate: licensePlate, pin },
+    })
+    tokens.set(data)
+    return decodeToken(data.access_token)
+  },
+
+  getAllUsers() {
+    return request('/admin/users', { auth: true })
+  },
+
+  createUser({ name, surname, licensePlate }) {
+    return request('/admin/users', {
+      method: 'POST',
+      auth: true,
+      body: { name, surname, license_plate: licensePlate },
+    })
+  },
+
+  resetUserPin(id) {
+    return request(`/admin/users/${id}/reset-pin`, { method: 'POST', auth: true })
+  },
+
+  setUserRole(id, role) {
+    return request(`/admin/users/${id}/role`, { method: 'POST', auth: true, body: { role } })
+  },
 }
