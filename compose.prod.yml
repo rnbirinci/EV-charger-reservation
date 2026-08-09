@@ -1,0 +1,21 @@
+# Prod override (afk-prod): cloudflared tunnel -> afk-nginx (Host bazlı) ->
+# frontend. Frontend yalnızca docker bridge'e (172.17.0.1:8093) açılır,
+# suhube.ahmetbirinci.dev bloğu /opt/AFK/nginx/afk.conf içindedir.
+# Kullanım: docker compose -f docker-compose.yml -f compose.prod.yml up -d --build
+services:
+  db:
+    restart: unless-stopped
+  backend:
+    restart: unless-stopped
+  frontend:
+    restart: unless-stopped
+    ports: !override
+      - "172.17.0.1:8093:80"
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./secrets/cloudflared:/etc/cloudflared:ro
+    depends_on:
+      - frontend
