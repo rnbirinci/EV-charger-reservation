@@ -86,7 +86,8 @@ func GetReservationsByUser(pool *pgxpool.Pool, userID int) ([]model.Reservation,
 	}
 	defer rows.Close()
 
-	var result []model.Reservation
+	// Non-nil so an empty result serializes as [] rather than null.
+	result := []model.Reservation{}
 	for rows.Next() {
 		var id int
 		var createdAt, slotTime time.Time
@@ -119,7 +120,8 @@ func GetAllReservations(pool *pgxpool.Pool) ([]model.AdminReservation, error) {
 	}
 	defer rows.Close()
 
-	var result []model.AdminReservation
+	// Non-nil so an empty result serializes as [] rather than null.
+	result := []model.AdminReservation{}
 	for rows.Next() {
 		var id, userID int
 		var userName, plate string

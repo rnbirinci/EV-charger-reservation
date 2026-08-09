@@ -64,9 +64,12 @@ func TestCreateReservation(t *testing.T) {
 	userID := testUserID(t, pool, "34ABC003") // Fatma; a resident not used by other manual tests
 	cleanupReservations(t, pool, userID)
 
-	// Far enough in the future that it can never collide with "now" as the
-	// test suite runs, truncated to a slot boundary.
-	future := time.Now().Add(72 * time.Hour).Truncate(30 * time.Minute).UTC()
+	// A fixed 08:00 UTC start, three days out: always in the future, and
+	// anchored to a controlled time-of-day so the various +N-hour offsets
+	// below can never accidentally land on 22:30 (which would trip the
+	// overnight-only slot-count rule and make the test flaky).
+	now := time.Now().UTC()
+	future := time.Date(now.Year(), now.Month(), now.Day(), 8, 0, 0, 0, time.UTC).AddDate(0, 0, 3)
 
 	t.Run("single slot succeeds", func(t *testing.T) {
 		id, err := CreateReservation(pool, userID, future, 1)

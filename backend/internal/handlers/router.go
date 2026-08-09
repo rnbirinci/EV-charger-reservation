@@ -50,9 +50,14 @@ func (s *Server) getDevice(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, device)
 }
 
+// istanbul is a fixed UTC+3 zone. Turkey has had no DST since 2016, so a fixed
+// offset is correct year-round and avoids depending on the tz database being
+// present in the (alpine) container. "A day" of slots is a local Istanbul day.
+var istanbul = time.FixedZone("Europe/Istanbul", 3*60*60)
+
 func (s *Server) getSlots(w http.ResponseWriter, r *http.Request) {
 	dateStr := r.URL.Query().Get("date")
-	date, err := time.Parse("2006-01-02", dateStr)
+	date, err := time.ParseInLocation("2006-01-02", dateStr, istanbul)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid date, expected format YYYY-MM-DD")
 		return
