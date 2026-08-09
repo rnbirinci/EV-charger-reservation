@@ -23,6 +23,10 @@ type User struct {
 	Role         string `json:"role"`
 	LicensePlate string `json:"license_plate"`
 	PinHash      string `json:"-"`
+	// PinSet is false for an admin-invited or admin-reset account that hasn't
+	// chosen a PIN yet (pin_hash is NULL). Such a user sets their PIN on first
+	// login rather than entering one.
+	PinSet bool `json:"pin_set"`
 }
 
 type Reservation struct {

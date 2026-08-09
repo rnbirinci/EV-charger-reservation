@@ -14,17 +14,20 @@ import (
 // *Server instead of free functions so they can reach s.pool without global
 // variables.
 type Server struct {
-	pool *pgxpool.Pool
+	pool    *pgxpool.Pool
+	limiter *loginLimiter
 }
 
 func NewRouter(pool *pgxpool.Pool) *http.ServeMux {
-	s := &Server{pool: pool}
+	s := &Server{pool: pool, limiter: newLoginLimiter()}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", s.health)
 	mux.HandleFunc("GET /api/device", s.getDevice)
 	mux.HandleFunc("GET /api/slots", s.getSlots)
+	mux.HandleFunc("GET /api/auth/status", s.authStatus)
 	mux.HandleFunc("POST /api/login", s.login)
+	mux.HandleFunc("POST /api/set-pin", s.setPin)
 	mux.HandleFunc("POST /api/refresh", s.refresh)
 	mux.HandleFunc("POST /api/logout", s.logout)
 
@@ -33,6 +36,10 @@ func NewRouter(pool *pgxpool.Pool) *http.ServeMux {
 	mux.HandleFunc("DELETE /api/reservations/{id}", requireAuth(s.cancelReservation))
 
 	mux.HandleFunc("GET /api/admin/reservations", requireAdmin(s.getAllReservations))
+	mux.HandleFunc("GET /api/admin/users", requireAdmin(s.getAllUsers))
+	mux.HandleFunc("POST /api/admin/users", requireAdmin(s.createUser))
+	mux.HandleFunc("POST /api/admin/users/{id}/reset-pin", requireAdmin(s.resetPin))
+	mux.HandleFunc("POST /api/admin/users/{id}/role", requireSuperadmin(s.setUserRole))
 
 	return mux
 }
@@ -50,9 +57,14 @@ func (s *Server) getDevice(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, device)
 }
 
+// istanbul is a fixed UTC+3 zone. Turkey has had no DST since 2016, so a fixed
+// offset is correct year-round and avoids depending on the tz database being
+// present in the (alpine) container. "A day" of slots is a local Istanbul day.
+var istanbul = time.FixedZone("Europe/Istanbul", 3*60*60)
+
 func (s *Server) getSlots(w http.ResponseWriter, r *http.Request) {
 	dateStr := r.URL.Query().Get("date")
-	date, err := time.Parse("2006-01-02", dateStr)
+	date, err := time.ParseInLocation("2006-01-02", dateStr, istanbul)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid date, expected format YYYY-MM-DD")
 		return
