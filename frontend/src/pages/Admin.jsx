@@ -317,7 +317,8 @@ const inputStyle = {
   border: '1px solid var(--glass-border)',
   borderRadius: 12,
   padding: '11px 14px',
-  font: '500 14px var(--font-text)',
+  // 16px minimum so iOS Safari doesn't auto-zoom the page on focus.
+  font: '500 16px var(--font-text)',
   color: 'var(--text-primary)',
   outline: 'none',
 }
