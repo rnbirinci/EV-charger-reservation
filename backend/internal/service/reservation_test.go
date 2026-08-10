@@ -135,9 +135,18 @@ func TestCreateReservation(t *testing.T) {
 		}
 	})
 
-	t.Run("a reservation straddling day and night is rejected", func(t *testing.T) {
-		// 21:30,22:00 (day) then 22:30,23:00 (night) — spans both windows.
-		_, err := CreateReservation(pool, userID, at(21, 30), 4)
+	t.Run("a reservation crossing day into night is allowed", func(t *testing.T) {
+		// 21:30,22:00 (2 day) then 22:30,23:00 (2 night) — crosses the boundary.
+		id, err := CreateReservation(pool, userID, at(21, 30), 4)
+		if err != nil {
+			t.Fatalf("expected success, got %v", err)
+		}
+		defer store.DeleteReservation(pool, id, userID, false)
+	})
+
+	t.Run("more than 4 daytime slots is rejected even when it reaches night", func(t *testing.T) {
+		// 18:00..22:30: 9 daytime slots (18:00–22:00) plus one night slot.
+		_, err := CreateReservation(pool, userID, at(18, 0), 10)
 		if !errors.Is(err, ErrInvalidSlotCount) {
 			t.Fatalf("expected ErrInvalidSlotCount, got %v", err)
 		}

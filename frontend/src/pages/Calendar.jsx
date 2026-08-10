@@ -3,16 +3,10 @@ import { Sun, MoonStars, SignOut, CheckCircle, WarningCircle } from '@phosphor-i
 import { Button } from '../components/Button'
 import { DayChips } from '../components/DayChips'
 import { api, ApiError } from '../api/client'
-import {
-  istanbulDateStr,
-  fmtTime,
-  isPast,
-  durationLabel,
-  isDaytimeSlot,
-  isNightEveningSlot,
-  isNightMorningSlot,
-} from '../lib/time'
+import { istanbulDateStr, fmtTime, isPast, durationLabel, isDaytimeSlot, isNightMorningSlot, isNightEveningSlot } from '../lib/time'
 import { useAuth } from '../auth/AuthContext'
+
+const MAX_DAY_SLOTS = 4 // daytime is capped at 2 hours; night is unlimited
 
 export function Calendar() {
   const { logout } = useAuth()
@@ -27,9 +21,8 @@ export function Calendar() {
   const [submitting, setSubmitting] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
 
-  // Load D and D+1 together: the night window (22:30–06:00) spans both — D's
-  // evening plus the next morning. The ignore guard drops a stale response if
-  // the day/reload changes before it arrives.
+  // Load D and D+1: one day's bookable timeline runs 06:30 today → 06:00
+  // tomorrow, so the night's early hours come from D+1.
   useEffect(() => {
     let ignore = false
     Promise.all([api.getSlots(istanbulDateStr(day)), api.getSlots(istanbulDateStr(day + 1))])
@@ -47,7 +40,6 @@ export function Calendar() {
     }
   }, [day, reloadKey])
 
-  // Availability pill reflects "now", so it always tracks today.
   useEffect(() => {
     api.getSlots(istanbulDateStr(0)).then((d) => setBusyNow(computeBusyNow(d))).catch(() => {})
   }, [])
@@ -63,34 +55,37 @@ export function Calendar() {
     setMsg(null)
   }
 
+  // Switching Gündüz/Gece keeps the current selection, so it can cross the
+  // boundary: select the evening in Gündüz, switch to Gece, keep extending.
   const changeMode = (m) => {
     setMode(m)
-    clearSelection()
     setMsg(null)
   }
 
-  // Daytime: 06:30–22:00 slots, max 4. Night: 22:30–06:00 = this evening's
-  // late slots + the next morning's early slots, no length cap.
-  const daySlots = slots.filter((s) => isDaytimeSlot(s.time))
-  const nightSlots = [
-    ...slots.filter((s) => isNightEveningSlot(s.time)),
+  // One continuous timeline: D's 06:30–23:30 plus D+1's 00:00–05:30. The two
+  // tabs are just slices of it, but selStart/selLen are indices into this
+  // single array, so a selection started in Gündüz can extend into Gece.
+  const allSlots = [
+    ...slots.filter((s) => isDaytimeSlot(s.time) || isNightEveningSlot(s.time)),
     ...nextSlots.filter((s) => isNightMorningSlot(s.time)),
   ]
-  const activeSlots = mode === 'day' ? daySlots : nightSlots
-  const maxLen = mode === 'day' ? 4 : nightSlots.length
+  const indexed = allSlots.map((s, i) => ({ s, i }))
+  const view = mode === 'day' ? indexed.filter(({ s }) => isDaytimeSlot(s.time)) : indexed.filter(({ s }) => !isDaytimeSlot(s.time))
 
-  // Tap to start, extend into the next contiguous free slot (up to maxLen),
-  // shrink from the end, or clear. daySlots/nightSlots have no interior gaps,
-  // so consecutive indices are contiguous 30-minute slots.
+  const dayCountIn = (a, b) => allSlots.slice(a, b + 1).filter((s) => isDaytimeSlot(s.time)).length
+
+  // Tap to start, extend into the next contiguous free slot, shrink from the
+  // end, or clear. Extension is blocked only if it would exceed 4 daytime
+  // slots; night slots don't count against the cap.
   const tapSlot = (i) => {
-    const s = activeSlots[i]
+    const s = allSlots[i]
     if (s.is_busy || isPast(s.time)) return
     setMsg(null)
     if (selStart === null) {
       setSelStart(i)
       setSelLen(1)
-    } else if (i === selStart + selLen && selLen < maxLen && !activeSlots[i].is_busy) {
-      setSelLen(selLen + 1)
+    } else if (i === selStart + selLen && !s.is_busy) {
+      if (dayCountIn(selStart, i) <= MAX_DAY_SLOTS) setSelLen(selLen + 1)
     } else if (i === selStart + selLen - 1 && selLen > 1) {
       setSelLen(selLen - 1)
     } else if (i >= selStart && i < selStart + selLen) {
@@ -103,14 +98,19 @@ export function Calendar() {
 
   const selectionSummary =
     selLen > 0
-      ? `${fmtTime(activeSlots[selStart].time)} – ${fmtTime(endOf(activeSlots, selStart, selLen))} · ${durationLabel(selLen)}`
+      ? `${fmtTime(allSlots[selStart].time)} – ${fmtTime(endOf(allSlots, selStart, selLen))} · ${durationLabel(selLen)}`
       : '—'
+
+  // In Gündüz, if the slot right after the selection is a (free) night slot,
+  // the selection has reached the boundary — hint the user to switch to Gece.
+  const nextAfterSel = selStart === null ? null : allSlots[selStart + selLen]
+  const canExtendToNight = mode === 'day' && nextAfterSel && !isDaytimeSlot(nextAfterSel.time) && !nextAfterSel.is_busy
 
   const confirm = async () => {
     setSubmitting(true)
     setMsg(null)
     try {
-      await api.createReservation(activeSlots[selStart].time, selLen)
+      await api.createReservation(allSlots[selStart].time, selLen)
       clearSelection()
       setReloadKey((k) => k + 1)
       setMsg({ kind: 'ok', text: 'Ayarlandı — cihaz senin.' })
@@ -147,13 +147,12 @@ export function Calendar() {
 
       <DayChips count={8} selected={day} onSelect={changeDay} />
 
+      <div style={{ padding: '0 20px 4px', font: '400 12px/1.4 var(--font-text)', color: 'var(--text-tertiary)' }}>
+        {mode === 'day' ? 'Gündüz en fazla 2 saat. Geceye taşmak için Gece sekmesine geç.' : 'Gece 22:30 – 06:00, süre sınırı yok.'}
+      </div>
+
       <div style={{ flex: 1, overflowY: 'auto', padding: '4px 20px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {mode === 'night' && (
-          <div style={{ font: '400 12px/1.4 var(--font-text)', color: 'var(--text-tertiary)', padding: '4px 2px' }}>
-            Gece 22:30 – 06:00. İstediğin kadar ardışık slot seçebilirsin.
-          </div>
-        )}
-        {activeSlots.map((s, i) => {
+        {view.map(({ s, i }) => {
           const gone = isPast(s.time)
           const sel = selStart !== null && i >= selStart && i < selStart + selLen
           const c = sel ? SEL : s.is_busy || gone ? OCC : FREE
@@ -190,6 +189,11 @@ export function Calendar() {
             </button>
           )
         })}
+        {canExtendToNight && (
+          <button onClick={() => changeMode('night')} style={extendHint}>
+            Seçimin 22:00'de bitiyor — geceye devam etmek için dokun →
+          </button>
+        )}
         <div style={{ height: 10 }} />
       </div>
 
@@ -330,6 +334,20 @@ function Banner({ msg }) {
       <span style={{ font: '500 13px/1.4 var(--font-text)', color: 'var(--text-primary)' }}>{msg.text}</span>
     </div>
   )
+}
+
+const extendHint = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: '12px 14px',
+  borderRadius: 12,
+  background: 'var(--sel-fill)',
+  border: '1px solid rgba(0,212,212,.35)',
+  color: 'var(--ioniq-teal)',
+  font: '600 12.5px var(--font-text)',
+  cursor: 'pointer',
+  WebkitTapHighlightColor: 'transparent',
 }
 
 const FREE = { bg: 'var(--glass-fill)', bd: 'var(--glass-border)', col: 'var(--text-primary)' }
