@@ -57,10 +57,16 @@ export function fmtTime(iso) {
 // True if a slot belongs to the daytime window [05:00, 22:30) in Istanbul.
 // The 22:30–05:00 overnight window is reserved for the single night block, so
 // those slots are hidden from the day-mode list.
-export function isDaytimeSlot(iso) {
+// Minutes-of-day (local Istanbul) for a slot timestamp.
+export function clockMinutes(iso) {
   const [h, m] = fmtTime(iso).split(':').map(Number)
-  const mins = h * 60 + m
-  return mins >= 5 * 60 && mins < 22 * 60 + 30
+  return h * 60 + m
+}
+
+// Daytime window: 06:30–22:00 (inclusive start times), max 4 slots.
+export function isDaytimeSlot(iso) {
+  const mins = clockMinutes(iso)
+  return mins >= 6 * 60 + 30 && mins <= 22 * 60
 }
 
 // "HH:MM – HH:MM" spanning from the first slot's start to 30 min after the last.
@@ -102,9 +108,28 @@ export function isReservationPast(slotISOs) {
   return end <= Date.now()
 }
 
-export const DURATION_LABELS = ['30 dk', '1 saat', '1,5 saat', '2 saat']
+// The night window is 22:30–06:00: evening slots (>= 22:30) belong to the
+// selected day, morning slots (<= 05:30) to the next day.
+export function isNightEveningSlot(iso) {
+  return clockMinutes(iso) >= 22 * 60 + 30
+}
+export function isNightMorningSlot(iso) {
+  return clockMinutes(iso) <= 5 * 60 + 30
+}
 
-// Human label for a day-mode selection of 1-4 slots.
+// A reservation is a "night" one if its first slot is in the night window.
+export function isNightReservation(slotISOs) {
+  if (!slotISOs || slotISOs.length === 0) return false
+  return isNightEveningSlot(slotISOs[0]) || isNightMorningSlot(slotISOs[0])
+}
+
+// Human duration label for any number of 30-minute slots: "30 dk", "1 saat",
+// "1,5 saat", ... "6,5 saat".
 export function durationLabel(numSlots) {
-  return DURATION_LABELS[numSlots - 1] || `${numSlots} slot`
+  const mins = numSlots * 30
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  if (h === 0) return `${m} dk`
+  if (m === 0) return `${h} saat`
+  return `${h},5 saat`
 }
