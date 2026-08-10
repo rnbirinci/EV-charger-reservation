@@ -9,27 +9,41 @@ import (
 )
 
 const (
-	slotDuration           = 30 * time.Minute
-	maxSlotsPerReservation = 4
-	maxActiveReservations  = 2
-	overnightSlotCount     = 13 // 22:30 -> 05:00 next day, the handoff's one exception to the 4-slot cap
+	slotDuration          = 30 * time.Minute
+	maxDaySlots           = 4 // daytime reservations: at most 2 hours
+	maxActiveReservations = 2
+
+	// Bookable windows, as minutes-of-day (local clock). Anything outside both
+	// (e.g. 06:00) isn't bookable.
+	dayStartMin   = 6*60 + 30  // 06:30, first daytime slot
+	dayEndMin     = 22 * 60    // 22:00, last daytime slot
+	nightStartMin = 22*60 + 30 // 22:30, first night slot
+	nightEndMin   = 5*60 + 30  // 05:30, last night slot
 )
 
 var (
-	ErrInvalidSlotCount = errors.New("a reservation must be 1-4 slots (30 min - 2 hours), unless it starts at 22:30 and covers the full overnight window to 05:00 (13 slots)")
+	ErrInvalidSlotCount = errors.New("invalid reservation: daytime is 06:30-22:00 (max 4 slots / 2 hours), night is 22:30-06:00 (any length); slots must be contiguous and stay within one window")
 	ErrPastReservation  = errors.New("cannot reserve a slot in the past")
 	ErrTooManyActive    = errors.New("you already have 2 active reservations")
 	ErrSlotTaken        = errors.New("one or more of these slots is already reserved")
 )
 
-// CreateReservation validates the handoff's business rules and, if they
-// pass, hands off to the store to do the actual (transactional) insert.
+// CreateReservation validates the booking rules and, if they pass, hands off to
+// the store for the transactional insert.
 func CreateReservation(pool *pgxpool.Pool, userID int, start time.Time, numSlots int) (int, error) {
-	if !isValidSlotCount(start, numSlots) {
+	if numSlots < 1 {
 		return 0, ErrInvalidSlotCount
 	}
 	if start.Before(time.Now()) {
 		return 0, ErrPastReservation
+	}
+
+	times := make([]time.Time, numSlots)
+	for i := 0; i < numSlots; i++ {
+		times[i] = start.Add(time.Duration(i) * slotDuration)
+	}
+	if !validWindow(times) {
+		return 0, ErrInvalidSlotCount
 	}
 
 	active, err := store.CountActiveReservations(pool, userID)
@@ -38,11 +52,6 @@ func CreateReservation(pool *pgxpool.Pool, userID int, start time.Time, numSlots
 	}
 	if active >= maxActiveReservations {
 		return 0, ErrTooManyActive
-	}
-
-	times := make([]time.Time, numSlots)
-	for i := 0; i < numSlots; i++ {
-		times[i] = start.Add(time.Duration(i) * slotDuration)
 	}
 
 	id, err := store.CreateReservation(pool, userID, times)
@@ -55,9 +64,43 @@ func CreateReservation(pool *pgxpool.Pool, userID int, start time.Time, numSlots
 	return id, nil
 }
 
-func isValidSlotCount(start time.Time, numSlots int) bool {
-	if start.Hour() == 22 && start.Minute() == 30 {
-		return numSlots == overnightSlotCount
+// validWindow requires every slot to fall in the same window: all daytime
+// (then at most 4 slots) or all night (any length — the 22:30-06:00 window
+// only holds 15 slots, so it's self-capping). A reservation may not straddle
+// the two windows or include an unbookable slot.
+func validWindow(times []time.Time) bool {
+	allDay, allNight := true, true
+	for _, t := range times {
+		switch slotKind(t) {
+		case kindDay:
+			allNight = false
+		case kindNight:
+			allDay = false
+		default:
+			return false
+		}
 	}
-	return numSlots >= 1 && numSlots <= maxSlotsPerReservation
+	if allDay {
+		return len(times) <= maxDaySlots
+	}
+	return allNight
+}
+
+const (
+	kindDay   = "day"
+	kindNight = "night"
+)
+
+func slotKind(t time.Time) string {
+	m := t.Hour()*60 + t.Minute()
+	if m%30 != 0 {
+		return "" // not on a 30-minute boundary
+	}
+	if m >= dayStartMin && m <= dayEndMin {
+		return kindDay
+	}
+	if m >= nightStartMin || m <= nightEndMin {
+		return kindNight
+	}
+	return ""
 }

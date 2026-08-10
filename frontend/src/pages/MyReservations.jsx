@@ -1,10 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { SignOut, CalendarPlus, CalendarCheck, Lightning, MoonStars } from '@phosphor-icons/react'
 import { api } from '../api/client'
-import { fmtRange, fmtDate, durationLabel, isLiveNow, isReservationPast } from '../lib/time'
+import { fmtRange, fmtDate, durationLabel, isLiveNow, isReservationPast, isNightReservation } from '../lib/time'
 import { useAuth } from '../auth/AuthContext'
-
-const NIGHT_SLOTS = 13
 
 export function MyReservations() {
   const { logout } = useAuth()
@@ -104,10 +102,10 @@ export function MyReservations() {
 
 function ReservationCard({ r, onCancel }) {
   const live = isLiveNow(r.slots)
-  const night = r.slots.length === NIGHT_SLOTS
-  const Icon = night ? MoonStars : live ? Lightning : CalendarCheck
+  const night = isNightReservation(r.slots)
+  const Icon = live ? Lightning : night ? MoonStars : CalendarCheck
   const iconCol = live ? 'var(--ioniq-electric)' : 'var(--ioniq-teal)'
-  const subParts = [fmtDate(r.slots[0]), night ? 'gece bloğu' : durationLabel(r.slots.length)]
+  const subParts = [fmtDate(r.slots[0]), durationLabel(r.slots.length)]
   if (live) subParts.push('şu an aktif')
 
   return (
@@ -126,7 +124,7 @@ function ReservationCard({ r, onCancel }) {
       <Icon size={22} weight="fill" color={iconCol} />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
         <div style={{ font: "600 17px var(--font-rounded)", fontVariantNumeric: 'tabular-nums', color: live ? 'var(--ioniq-electric)' : 'var(--text-primary)' }}>
-          {night ? '22:30 – 05:00' : fmtRange(r.slots)}
+          {fmtRange(r.slots)}
         </div>
         <div style={{ font: "400 12px var(--font-text)", color: 'var(--text-secondary)' }}>{subParts.join(' · ')}</div>
       </div>
