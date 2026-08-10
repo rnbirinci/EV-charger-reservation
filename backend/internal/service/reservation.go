@@ -22,7 +22,7 @@ const (
 )
 
 var (
-	ErrInvalidSlotCount = errors.New("invalid reservation: daytime is 06:30-22:00 (max 4 slots / 2 hours), night is 22:30-06:00 (any length); slots must be contiguous and stay within one window")
+	ErrInvalidSlotCount = errors.New("invalid reservation: at most 4 daytime slots (06:30-22:00 / 2 hours); night slots (22:30-06:00) are unlimited; slots must be contiguous and bookable")
 	ErrPastReservation  = errors.New("cannot reserve a slot in the past")
 	ErrTooManyActive    = errors.New("you already have 2 active reservations")
 	ErrSlotTaken        = errors.New("one or more of these slots is already reserved")
@@ -64,26 +64,24 @@ func CreateReservation(pool *pgxpool.Pool, userID int, start time.Time, numSlots
 	return id, nil
 }
 
-// validWindow requires every slot to fall in the same window: all daytime
-// (then at most 4 slots) or all night (any length — the 22:30-06:00 window
-// only holds 15 slots, so it's self-capping). A reservation may not straddle
-// the two windows or include an unbookable slot.
+// validWindow caps the daytime portion of a reservation at 4 slots while
+// leaving night slots unlimited. A booking may cross the day→night boundary
+// (e.g. 21:30–23:00), but every slot must be bookable — an unbookable slot
+// (06:00, or off the 30-minute grid) is rejected, which also stops a booking
+// from spanning the 06:00 gap into the next day.
 func validWindow(times []time.Time) bool {
-	allDay, allNight := true, true
+	dayCount := 0
 	for _, t := range times {
 		switch slotKind(t) {
 		case kindDay:
-			allNight = false
+			dayCount++
 		case kindNight:
-			allDay = false
+			// no cap on night slots
 		default:
 			return false
 		}
 	}
-	if allDay {
-		return len(times) <= maxDaySlots
-	}
-	return allNight
+	return dayCount <= maxDaySlots
 }
 
 const (
