@@ -10,7 +10,7 @@ import (
 
 const (
 	slotDuration          = 30 * time.Minute
-	maxDaySlots           = 4 // daytime reservations: at most 2 hours
+	maxDaySlots           = 12 // daytime reservations: at most 6 hours
 	maxActiveReservations = 2
 
 	// Bookable windows, as minutes-of-day (local clock). Anything outside both
@@ -22,7 +22,7 @@ const (
 )
 
 var (
-	ErrInvalidSlotCount = errors.New("invalid reservation: at most 4 daytime slots (06:30-22:00 / 2 hours); night slots (22:30-06:00) are unlimited; slots must be contiguous and bookable")
+	ErrInvalidSlotCount = errors.New("invalid reservation: at most 12 daytime slots (06:30-22:00 / 6 hours); night slots (22:30-06:00) are unlimited; slots must be contiguous and bookable")
 	ErrPastReservation  = errors.New("cannot reserve a slot in the past")
 	ErrTooManyActive    = errors.New("you already have 2 active reservations")
 	ErrSlotTaken        = errors.New("one or more of these slots is already reserved")

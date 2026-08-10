@@ -14,6 +14,10 @@ type Device struct {
 type Slot struct {
 	Time   time.Time `json:"time"`
 	IsBusy bool      `json:"is_busy"`
+	// Who holds the slot — only set on busy slots, only sent to authenticated
+	// callers (GET /api/slots requires auth).
+	UserName     string `json:"user_name,omitempty"`
+	LicensePlate string `json:"license_plate,omitempty"`
 }
 
 type User struct {

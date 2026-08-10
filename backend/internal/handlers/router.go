@@ -24,7 +24,7 @@ func NewRouter(pool *pgxpool.Pool) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", s.health)
 	mux.HandleFunc("GET /api/device", s.getDevice)
-	mux.HandleFunc("GET /api/slots", s.getSlots)
+	mux.HandleFunc("GET /api/slots", requireAuth(s.getSlots))
 	mux.HandleFunc("GET /api/auth/status", s.authStatus)
 	mux.HandleFunc("POST /api/login", s.login)
 	mux.HandleFunc("POST /api/set-pin", s.setPin)
@@ -76,17 +76,20 @@ func (s *Server) getSlots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	busySet := make(map[int64]bool)
-	for _, t := range busy {
-		busySet[t.Unix()] = true
+	busyBy := make(map[int64]store.BusySlot)
+	for _, b := range busy {
+		busyBy[b.Start.Unix()] = b
 	}
 
 	var slots []model.Slot
 	for t := date; t.Before(date.AddDate(0, 0, 1)); t = t.Add(30 * time.Minute) {
-		slots = append(slots, model.Slot{
-			Time:   t,
-			IsBusy: busySet[t.Unix()],
-		})
+		slot := model.Slot{Time: t}
+		if b, ok := busyBy[t.Unix()]; ok {
+			slot.IsBusy = true
+			slot.UserName = b.UserName
+			slot.LicensePlate = b.LicensePlate
+		}
+		slots = append(slots, slot)
 	}
 
 	writeJSON(w, http.StatusOK, slots)

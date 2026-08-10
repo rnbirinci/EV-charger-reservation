@@ -111,7 +111,7 @@ export const api = {
   },
 
   getSlots(date) {
-    return request(`/slots?date=${date}`)
+    return request(`/slots?date=${date}`, { auth: true })
   },
 
   getDevice() {
