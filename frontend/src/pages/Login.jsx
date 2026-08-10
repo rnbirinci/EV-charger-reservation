@@ -3,6 +3,7 @@ import { WarningCircle, Backspace, ArrowLeft } from '@phosphor-icons/react'
 import { Button } from '../components/Button'
 import { useAuth } from '../auth/AuthContext'
 import { api, ApiError } from '../api/client'
+import { normalizePlate, formatPlate, plateInputMode } from '../lib/plate'
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del']
 
@@ -37,7 +38,9 @@ export function Login() {
   const [err, setErr] = useState(null)
   const [busy, setBusy] = useState(false)
 
-  const normPlate = plate.trim().toUpperCase()
+  // `plate` holds the raw, no-space, uppercase value; the input shows it
+  // grouped ("34 ABC 123").
+  const normPlate = plate
 
   const goBackToPlate = () => {
     setPhase('plate')
@@ -136,13 +139,15 @@ export function Login() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 30 }}>
           <div style={label}>Plaka</div>
           <input
-            value={plate}
+            value={formatPlate(plate)}
             onChange={(e) => {
-              setPlate(e.target.value)
+              setPlate(normalizePlate(e.target.value))
               setErr(null)
             }}
-            placeholder="örn. 34ABC001"
+            placeholder="örn. 34 ABC 001"
+            inputMode={plateInputMode(plate)}
             autoCapitalize="characters"
+            autoComplete="off"
             autoFocus
             onKeyDown={(e) => e.key === 'Enter' && submitPlate()}
             style={plateInput}
