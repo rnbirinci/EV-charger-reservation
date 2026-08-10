@@ -43,7 +43,7 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.TrimSpace(req.Name)
 	surname := strings.TrimSpace(req.Surname)
-	plate := strings.ToUpper(strings.TrimSpace(req.LicensePlate))
+	plate := normalizePlate(req.LicensePlate)
 	if name == "" || surname == "" || plate == "" {
 		writeError(w, http.StatusBadRequest, "name, surname and license_plate are required")
 		return
