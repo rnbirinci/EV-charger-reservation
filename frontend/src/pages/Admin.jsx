@@ -3,11 +3,9 @@ import { SignOut, CalendarCheck, MoonStars, UserPlus, User, CheckCircle, Warning
 import { DayChips } from '../components/DayChips'
 import { Button } from '../components/Button'
 import { api, ApiError } from '../api/client'
-import { fmtRange, fmtDate, istanbulDateStr, istanbulDateOfISO, isReservationPast } from '../lib/time'
+import { fmtRange, fmtDate, istanbulDateStr, istanbulDateOfISO, isReservationPast, isNightReservation } from '../lib/time'
 import { normalizePlate, formatPlate, plateInputMode } from '../lib/plate'
 import { useAuth } from '../auth/AuthContext'
-
-const NIGHT_SLOTS = 13
 
 export function Admin() {
   const { logout } = useAuth()
@@ -87,14 +85,13 @@ function ReservationsView() {
           </div>
         )}
         {filtered.map((r) => {
-          const night = r.slots.length === NIGHT_SLOTS
-          const Icon = night ? MoonStars : CalendarCheck
+          const Icon = isNightReservation(r.slots) ? MoonStars : CalendarCheck
           return (
             <div key={r.id} style={rowCard}>
               <Icon size={18} weight="fill" color="var(--text-secondary)" />
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <div style={{ font: '600 15px var(--font-rounded)', fontVariantNumeric: 'tabular-nums', color: 'var(--text-primary)' }}>
-                  {night ? '22:30 – 05:00' : fmtRange(r.slots)}
+                  {fmtRange(r.slots)}
                 </div>
                 <div style={{ font: '400 12px var(--font-text)', color: 'var(--text-secondary)' }}>
                   {r.license_plate} · {r.user_name} · {fmtDate(r.slots[0])}

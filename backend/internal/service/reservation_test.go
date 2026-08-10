@@ -64,73 +64,94 @@ func TestCreateReservation(t *testing.T) {
 	userID := testUserID(t, pool, "34ABC003") // Fatma; a resident not used by other manual tests
 	cleanupReservations(t, pool, userID)
 
-	// A fixed 08:00 UTC start, three days out: always in the future, and
-	// anchored to a controlled time-of-day so the various +N-hour offsets
-	// below can never accidentally land on 22:30 (which would trip the
-	// overnight-only slot-count rule and make the test flaky).
+	// Anchor to midnight UTC three days out; `at` builds slot times off it.
+	// slotKind reads whatever clock a time carries, so UTC clock hours map to
+	// the day/night windows directly.
 	now := time.Now().UTC()
-	future := time.Date(now.Year(), now.Month(), now.Day(), 8, 0, 0, 0, time.UTC).AddDate(0, 0, 3)
+	base := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, 3)
+	at := func(h, m int) time.Time {
+		return base.Add(time.Duration(h)*time.Hour + time.Duration(m)*time.Minute)
+	}
 
-	t.Run("single slot succeeds", func(t *testing.T) {
-		id, err := CreateReservation(pool, userID, future, 1)
+	t.Run("single daytime slot succeeds", func(t *testing.T) {
+		id, err := CreateReservation(pool, userID, at(8, 0), 1)
 		if err != nil {
 			t.Fatalf("expected success, got %v", err)
 		}
 		defer store.DeleteReservation(pool, id, userID, false)
 	})
 
-	t.Run("four slots (the normal max) succeeds", func(t *testing.T) {
-		start := future.Add(2 * time.Hour)
-		id, err := CreateReservation(pool, userID, start, 4)
+	t.Run("four daytime slots (the max) succeeds", func(t *testing.T) {
+		id, err := CreateReservation(pool, userID, at(10, 0), 4)
 		if err != nil {
 			t.Fatalf("expected success, got %v", err)
 		}
 		defer store.DeleteReservation(pool, id, userID, false)
 	})
 
-	t.Run("five slots is rejected outside the overnight exception", func(t *testing.T) {
-		start := future.Add(5 * time.Hour)
-		_, err := CreateReservation(pool, userID, start, 5)
+	t.Run("five daytime slots is rejected", func(t *testing.T) {
+		_, err := CreateReservation(pool, userID, at(13, 0), 5)
 		if !errors.Is(err, ErrInvalidSlotCount) {
 			t.Fatalf("expected ErrInvalidSlotCount, got %v", err)
 		}
 	})
 
 	t.Run("zero slots is rejected", func(t *testing.T) {
-		start := future.Add(7 * time.Hour)
-		_, err := CreateReservation(pool, userID, start, 0)
+		_, err := CreateReservation(pool, userID, at(15, 0), 0)
 		if !errors.Is(err, ErrInvalidSlotCount) {
 			t.Fatalf("expected ErrInvalidSlotCount, got %v", err)
 		}
 	})
 
-	t.Run("the 22:30-05:00 overnight window is accepted as 13 slots", func(t *testing.T) {
-		start := time.Date(future.Year(), future.Month(), future.Day(), 22, 30, 0, 0, time.UTC)
-		id, err := CreateReservation(pool, userID, start, 13)
+	t.Run("the whole night 22:30-06:00 (15 slots) succeeds", func(t *testing.T) {
+		id, err := CreateReservation(pool, userID, at(22, 30), 15)
 		if err != nil {
 			t.Fatalf("expected success, got %v", err)
 		}
 		defer store.DeleteReservation(pool, id, userID, false)
 	})
 
-	t.Run("a 22:30 start with the wrong slot count is still rejected", func(t *testing.T) {
-		start := time.Date(future.Year(), future.Month(), future.Day()+1, 22, 30, 0, 0, time.UTC)
-		_, err := CreateReservation(pool, userID, start, 4)
+	t.Run("a partial night range succeeds", func(t *testing.T) {
+		// 00:00 -> 03:00 (6 slots), all inside the night window.
+		id, err := CreateReservation(pool, userID, at(24, 0), 6)
+		if err != nil {
+			t.Fatalf("expected success, got %v", err)
+		}
+		defer store.DeleteReservation(pool, id, userID, false)
+	})
+
+	t.Run("a night range past 06:00 is rejected", func(t *testing.T) {
+		// 22:30 + 16 slots would reach 06:00, which is unbookable.
+		_, err := CreateReservation(pool, userID, at(22, 30), 16)
+		if !errors.Is(err, ErrInvalidSlotCount) {
+			t.Fatalf("expected ErrInvalidSlotCount, got %v", err)
+		}
+	})
+
+	t.Run("an unbookable 06:00 slot is rejected", func(t *testing.T) {
+		_, err := CreateReservation(pool, userID, at(6, 0), 1)
+		if !errors.Is(err, ErrInvalidSlotCount) {
+			t.Fatalf("expected ErrInvalidSlotCount, got %v", err)
+		}
+	})
+
+	t.Run("a reservation straddling day and night is rejected", func(t *testing.T) {
+		// 21:30,22:00 (day) then 22:30,23:00 (night) — spans both windows.
+		_, err := CreateReservation(pool, userID, at(21, 30), 4)
 		if !errors.Is(err, ErrInvalidSlotCount) {
 			t.Fatalf("expected ErrInvalidSlotCount, got %v", err)
 		}
 	})
 
 	t.Run("a start time in the past is rejected", func(t *testing.T) {
-		start := time.Now().Add(-1 * time.Hour)
-		_, err := CreateReservation(pool, userID, start, 1)
+		_, err := CreateReservation(pool, userID, time.Now().Add(-1*time.Hour), 1)
 		if !errors.Is(err, ErrPastReservation) {
 			t.Fatalf("expected ErrPastReservation, got %v", err)
 		}
 	})
 
 	t.Run("double booking the same slot is rejected", func(t *testing.T) {
-		start := future.Add(10 * time.Hour)
+		start := at(12, 0)
 		id, err := CreateReservation(pool, userID, start, 1)
 		if err != nil {
 			t.Fatalf("first booking should succeed, got %v", err)
@@ -143,25 +164,25 @@ func TestCreateReservation(t *testing.T) {
 	})
 
 	t.Run("a third active reservation is rejected", func(t *testing.T) {
-		id1, err := CreateReservation(pool, userID, future.Add(20*time.Hour), 1)
+		id1, err := CreateReservation(pool, userID, at(9, 0), 1)
 		if err != nil {
 			t.Fatalf("1st reservation should succeed, got %v", err)
 		}
 		defer store.DeleteReservation(pool, id1, userID, false)
 
-		id2, err := CreateReservation(pool, userID, future.Add(22*time.Hour), 1)
+		id2, err := CreateReservation(pool, userID, at(11, 0), 1)
 		if err != nil {
 			t.Fatalf("2nd reservation should succeed, got %v", err)
 		}
 		defer store.DeleteReservation(pool, id2, userID, false)
 
-		if _, err := CreateReservation(pool, userID, future.Add(24*time.Hour), 1); !errors.Is(err, ErrTooManyActive) {
+		if _, err := CreateReservation(pool, userID, at(13, 30), 1); !errors.Is(err, ErrTooManyActive) {
 			t.Fatalf("expected ErrTooManyActive, got %v", err)
 		}
 	})
 
 	t.Run("cancelling a reservation frees its slot for rebooking", func(t *testing.T) {
-		start := future.Add(30 * time.Hour)
+		start := at(14, 0)
 		id, err := CreateReservation(pool, userID, start, 1)
 		if err != nil {
 			t.Fatalf("booking should succeed, got %v", err)
