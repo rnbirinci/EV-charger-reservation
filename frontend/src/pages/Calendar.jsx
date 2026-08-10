@@ -4,6 +4,7 @@ import { Button } from '../components/Button'
 import { DayChips } from '../components/DayChips'
 import { api, ApiError } from '../api/client'
 import { istanbulDateStr, fmtTime, isPast, durationLabel, isDaytimeSlot, isNightMorningSlot, isNightEveningSlot } from '../lib/time'
+import { formatPlate } from '../lib/plate'
 import { useAuth } from '../auth/AuthContext'
 
 const MAX_DAY_SLOTS = 12 // daytime is capped at 6 hours; night is unlimited
@@ -176,16 +177,25 @@ export function Calendar() {
               <span style={{ font: '500 16px var(--font-rounded)', fontVariantNumeric: 'tabular-nums', color: c.col }}>
                 {fmtTime(s.time)}
               </span>
-              <span
-                style={{
-                  font: '600 11px var(--font-text)',
-                  letterSpacing: 1,
-                  textTransform: 'uppercase',
-                  color: sel ? 'var(--ioniq-teal)' : 'rgba(235,235,245,0.28)',
-                }}
-              >
-                {gone ? 'Geçti' : s.is_busy ? 'Dolu' : sel ? 'Seçili' : ''}
-              </span>
+              {s.is_busy ? (
+                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1, textAlign: 'right' }}>
+                  <span style={{ font: '600 12px var(--font-text)', color: 'rgba(235,235,245,0.5)' }}>{s.user_name}</span>
+                  <span style={{ font: '500 11px var(--font-text)', fontVariantNumeric: 'tabular-nums', letterSpacing: 0.5, color: 'rgba(235,235,245,0.3)' }}>
+                    {formatPlate(s.license_plate)}
+                  </span>
+                </span>
+              ) : (
+                <span
+                  style={{
+                    font: '600 11px var(--font-text)',
+                    letterSpacing: 1,
+                    textTransform: 'uppercase',
+                    color: sel ? 'var(--ioniq-teal)' : 'rgba(235,235,245,0.28)',
+                  }}
+                >
+                  {gone ? 'Geçti' : sel ? 'Seçili' : ''}
+                </span>
+              )}
             </button>
           )
         })}
