@@ -81,16 +81,17 @@ func TestCreateReservation(t *testing.T) {
 		defer store.DeleteReservation(pool, id, userID, false)
 	})
 
-	t.Run("four daytime slots (the max) succeeds", func(t *testing.T) {
-		id, err := CreateReservation(pool, userID, at(10, 0), 4)
+	t.Run("twelve daytime slots (the max) succeeds", func(t *testing.T) {
+		// 09:00 -> 15:00 (6 hours), all daytime.
+		id, err := CreateReservation(pool, userID, at(9, 0), 12)
 		if err != nil {
 			t.Fatalf("expected success, got %v", err)
 		}
 		defer store.DeleteReservation(pool, id, userID, false)
 	})
 
-	t.Run("five daytime slots is rejected", func(t *testing.T) {
-		_, err := CreateReservation(pool, userID, at(13, 0), 5)
+	t.Run("thirteen daytime slots is rejected", func(t *testing.T) {
+		_, err := CreateReservation(pool, userID, at(8, 0), 13)
 		if !errors.Is(err, ErrInvalidSlotCount) {
 			t.Fatalf("expected ErrInvalidSlotCount, got %v", err)
 		}
@@ -144,9 +145,9 @@ func TestCreateReservation(t *testing.T) {
 		defer store.DeleteReservation(pool, id, userID, false)
 	})
 
-	t.Run("more than 4 daytime slots is rejected even when it reaches night", func(t *testing.T) {
-		// 18:00..22:30: 9 daytime slots (18:00–22:00) plus one night slot.
-		_, err := CreateReservation(pool, userID, at(18, 0), 10)
+	t.Run("more than 12 daytime slots is rejected even when it reaches night", func(t *testing.T) {
+		// 16:00..22:30: 13 daytime slots (16:00–22:00) plus one night slot.
+		_, err := CreateReservation(pool, userID, at(16, 0), 14)
 		if !errors.Is(err, ErrInvalidSlotCount) {
 			t.Fatalf("expected ErrInvalidSlotCount, got %v", err)
 		}

@@ -6,7 +6,7 @@ import { api, ApiError } from '../api/client'
 import { istanbulDateStr, fmtTime, isPast, durationLabel, isDaytimeSlot, isNightMorningSlot, isNightEveningSlot } from '../lib/time'
 import { useAuth } from '../auth/AuthContext'
 
-const MAX_DAY_SLOTS = 4 // daytime is capped at 2 hours; night is unlimited
+const MAX_DAY_SLOTS = 12 // daytime is capped at 6 hours; night is unlimited
 
 export function Calendar() {
   const { logout } = useAuth()
@@ -148,7 +148,7 @@ export function Calendar() {
       <DayChips count={8} selected={day} onSelect={changeDay} />
 
       <div style={{ padding: '0 20px 4px', font: '400 12px/1.4 var(--font-text)', color: 'var(--text-tertiary)' }}>
-        {mode === 'day' ? 'Gündüz en fazla 2 saat. Geceye taşmak için Gece sekmesine geç.' : 'Gece 22:30 – 06:00, süre sınırı yok.'}
+        {mode === 'day' ? 'Gündüz en fazla 6 saat. Geceye taşmak için Gece sekmesine geç.' : 'Gece 22:30 – 06:00, süre sınırı yok.'}
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '4px 20px', display: 'flex', flexDirection: 'column', gap: 6 }}>
