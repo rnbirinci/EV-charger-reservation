@@ -17,25 +17,35 @@ func GetDevice(pool *pgxpool.Pool) (model.Device, error) {
 	return device, nil
 }
 
-func GetBusySlots(pool *pgxpool.Pool, date time.Time) ([]time.Time, error) {
-	rows, err := pool.Query(context.Background(),
-		"SELECT start_time FROM slot_reservations WHERE start_time >= $1 AND start_time < $2",
+// BusySlot is a taken slot together with who reserved it.
+type BusySlot struct {
+	Start        time.Time
+	UserName     string
+	LicensePlate string
+}
+
+// GetBusySlots returns the taken slots for the day starting at `date`, each
+// with the reserving resident's name and plate.
+func GetBusySlots(pool *pgxpool.Pool, date time.Time) ([]BusySlot, error) {
+	rows, err := pool.Query(context.Background(), `
+		SELECT sr.start_time, u.name || ' ' || u.surname, u.license_plate
+		FROM slot_reservations sr
+		JOIN reservations r ON r.id = sr.reservation_id
+		JOIN users u ON u.id = r.user_id
+		WHERE sr.start_time >= $1 AND sr.start_time < $2`,
 		date, date.AddDate(0, 0, 1))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var times []time.Time
+	var out []BusySlot
 	for rows.Next() {
-		var t time.Time
-		if err := rows.Scan(&t); err != nil {
+		var b BusySlot
+		if err := rows.Scan(&b.Start, &b.UserName, &b.LicensePlate); err != nil {
 			return nil, err
 		}
-		times = append(times, t)
+		out = append(out, b)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return times, nil
+	return out, rows.Err()
 }
