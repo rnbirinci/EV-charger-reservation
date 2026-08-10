@@ -4,6 +4,7 @@ import { DayChips } from '../components/DayChips'
 import { Button } from '../components/Button'
 import { api, ApiError } from '../api/client'
 import { fmtRange, fmtDate, istanbulDateStr, istanbulDateOfISO, isReservationPast } from '../lib/time'
+import { normalizePlate, formatPlate, plateInputMode } from '../lib/plate'
 import { useAuth } from '../auth/AuthContext'
 
 const NIGHT_SLOTS = 13
@@ -140,7 +141,7 @@ function UsersView() {
     setBusy(true)
     setMsg(null)
     try {
-      await api.createUser({ name: name.trim(), surname: surname.trim(), licensePlate: plate.trim().toUpperCase() })
+      await api.createUser({ name: name.trim(), surname: surname.trim(), licensePlate: plate })
       setName('')
       setSurname('')
       setPlate('')
@@ -183,7 +184,15 @@ function UsersView() {
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ad" style={inputStyle} />
           <input value={surname} onChange={(e) => setSurname(e.target.value)} placeholder="Soyad" style={inputStyle} />
         </div>
-        <input value={plate} onChange={(e) => setPlate(e.target.value)} placeholder="Plaka — örn. 34ABC001" style={{ ...inputStyle, textTransform: 'uppercase' }} />
+        <input
+          value={formatPlate(plate)}
+          onChange={(e) => setPlate(normalizePlate(e.target.value))}
+          placeholder="Plaka — örn. 34 ABC 001"
+          inputMode={plateInputMode(plate)}
+          autoCapitalize="characters"
+          autoComplete="off"
+          style={inputStyle}
+        />
         <Button disabled={!canAdd} onClick={addUser}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
             <UserPlus size={18} weight="fill" />

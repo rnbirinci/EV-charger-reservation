@@ -46,13 +46,13 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 
 	// Throttle brute-forcing of the 4-digit PIN: too many failed attempts for
 	// a plate locks that plate out for a while.
-	key := strings.ToUpper(strings.TrimSpace(req.LicensePlate))
+	key := normalizePlate(req.LicensePlate)
 	if !s.limiter.allowed(key) {
 		writeError(w, http.StatusTooManyRequests, "too many attempts; try again later")
 		return
 	}
 
-	user, err := store.GetUserByLicensePlate(s.pool, req.LicensePlate)
+	user, err := store.GetUserByLicensePlate(s.pool, key)
 	if err != nil {
 		s.limiter.recordFailure(key)
 		writeError(w, http.StatusUnauthorized, "invalid license plate or pin")
@@ -199,7 +199,7 @@ func hashToken(token string) string {
 // authStatus lets the login screen decide whether to ask for a PIN (active
 // account) or to offer the set-PIN flow (invited/reset account).
 func (s *Server) authStatus(w http.ResponseWriter, r *http.Request) {
-	plate := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("license_plate")))
+	plate := normalizePlate(r.URL.Query().Get("license_plate"))
 	if plate == "" {
 		writeError(w, http.StatusBadRequest, "license_plate is required")
 		return
@@ -228,7 +228,7 @@ func (s *Server) setPin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "pin must be exactly 4 digits")
 		return
 	}
-	plate := strings.ToUpper(strings.TrimSpace(req.LicensePlate))
+	plate := normalizePlate(req.LicensePlate)
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Pin), bcrypt.DefaultCost)
 	if err != nil {
@@ -257,6 +257,12 @@ func (s *Server) setPin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, tokenResponse{AccessToken: access, RefreshToken: refresh})
+}
+
+// normalizePlate removes all whitespace and uppercases, so "34 abc 123" and
+// "34ABC123" resolve to the same account.
+func normalizePlate(s string) string {
+	return strings.ToUpper(strings.Join(strings.Fields(s), ""))
 }
 
 func isValidPin(pin string) bool {
