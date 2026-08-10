@@ -156,7 +156,7 @@ export function Calendar() {
         {view.map(({ s, i }) => {
           const gone = isPast(s.time)
           const sel = selStart !== null && i >= selStart && i < selStart + selLen
-          const c = sel ? SEL : s.is_busy || gone ? OCC : FREE
+          const c = sel ? SEL : s.is_busy ? BUSY : gone ? OCC : FREE
           return (
             <button
               key={s.time}
@@ -179,8 +179,8 @@ export function Calendar() {
               </span>
               {s.is_busy ? (
                 <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1, textAlign: 'right' }}>
-                  <span style={{ font: '600 12px var(--font-text)', color: 'rgba(235,235,245,0.5)' }}>{s.user_name}</span>
-                  <span style={{ font: '500 11px var(--font-text)', fontVariantNumeric: 'tabular-nums', letterSpacing: 0.5, color: 'rgba(235,235,245,0.3)' }}>
+                  <span style={{ font: '600 12px var(--font-text)', color: 'rgba(255,99,89,0.95)' }}>{s.user_name}</span>
+                  <span style={{ font: '500 11px var(--font-text)', fontVariantNumeric: 'tabular-nums', letterSpacing: 0.5, color: 'rgba(255,99,89,0.6)' }}>
                     {formatPlate(s.license_plate)}
                   </span>
                 </span>
@@ -363,3 +363,5 @@ const extendHint = {
 const FREE = { bg: 'var(--glass-fill)', bd: 'var(--glass-border)', col: 'var(--text-primary)' }
 const OCC = { bg: 'transparent', bd: 'rgba(255,255,255,0.06)', col: 'rgba(235,235,245,0.28)' }
 const SEL = { bg: 'var(--sel-fill)', bd: 'var(--ioniq-teal)', col: 'var(--ioniq-teal)' }
+// Reserved slots read red.
+const BUSY = { bg: 'rgba(255,59,48,0.08)', bd: 'rgba(255,59,48,0.4)', col: 'rgba(255,99,89,0.9)' }
